@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Versão do tema para o modo escuro do aparelho -->
+    <style name="Theme.EmprestaAe" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">@color/brand_green</item>
+        <item name="android:windowBackground">@color/window_background_dark</item>
+    </style>
+</resources>

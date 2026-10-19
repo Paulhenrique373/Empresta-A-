@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cor principal do app: verde escolar #315F4B -->
+    <color name="brand_green">#FF315F4B</color>
+    <color name="brand_green_dark">#FF1F3F30</color>
+    <color name="brand_green_light">#FFDCEBE2</color>
+
+    <!-- Fundo da janela enquanto o app abre (claro e escuro) -->
+    <color name="window_background_light">#FFFAFAF7</color>
+    <color name="window_background_dark">#FF121614</color>
+
+    <!-- Fundo do ícone do app -->
+    <color name="ic_empresta_bg">#FF315F4B</color>
+</resources>
