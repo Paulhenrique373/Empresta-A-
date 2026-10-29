@@ -29,10 +29,10 @@ private val LightColorScheme = lightColorScheme(
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF9AAEFF),
-    onPrimary = Color(0xFF10225E),
-    primaryContainer = Color(0xFF263C82),
-    onPrimaryContainer = Color(0xFFE8EEFF),
+    primary = Color(0xFF8EAEFF),
+    onPrimary = Color(0xFF102658),
+    primaryContainer = Color(0xFF253B70),
+    onPrimaryContainer = Color(0xFFE8F0FF),
     secondary = Color(0xFF65C59D),
     onSecondary = Color(0xFF062C1F),
     tertiary = Color(0xFFF0B96C),

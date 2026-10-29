@@ -233,19 +233,19 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
 
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }, topBar = {
         TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(14.dp)) {
-                Icon(Icons.Default.Devices, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp).size(24.dp))
+            Surface(color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .14f), shape = RoundedCornerShape(14.dp)) {
+                Icon(Icons.Default.Devices, contentDescription = "Empresta Aê", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(9.dp).size(24.dp))
             }
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text("Empresta Aê", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(if (nomeProfessor.isBlank()) "Demonstração local · Professor" else "$nomeProfessor · Demonstração local", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Empresta Aê", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                Text(if (nomeProfessor.isBlank()) "Professor · Demonstração local" else "$nomeProfessor · Demonstração local", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .82f))
             }
-        } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface))
+        } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, actionIconContentColor = MaterialTheme.colorScheme.onPrimary, navigationIconContentColor = MaterialTheme.colorScheme.onPrimary))
     }, bottomBar = {
-        NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+        NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, windowInsets = NavigationBarDefaults.windowInsets) {
             listOf("Início" to "Início", "Pedir" to "Pedir", "Itens" to "Equipamentos", "Atividade" to "Atividade", "Ajustes" to "Ajustes").forEach { (rótulo, destino) ->
                 val icon = when (destino) { "Início" -> Icons.Default.Home; "Pedir" -> Icons.AutoMirrored.Filled.Assignment; "Equipamentos" -> Icons.Default.Devices; "Atividade" -> Icons.Default.Search; else -> Icons.Default.MoreHoriz }
-                NavigationBarItem(selected = aba == destino, onClick = { aba = destino; pesquisa = "" }, icon = { Icon(icon, null) }, label = { Text(rótulo, fontSize = 10.sp, maxLines = 1) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, indicatorColor = MaterialTheme.colorScheme.primaryContainer, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant))
+                NavigationBarItem(selected = aba == destino, onClick = { aba = destino; pesquisa = "" }, icon = { Icon(icon, contentDescription = rótulo) }, label = { Text(rótulo, fontSize = 11.sp, maxLines = 1) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary, indicatorColor = MaterialTheme.colorScheme.primaryContainer, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant))
             }
         }
     }) { padding ->
@@ -292,10 +292,11 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
 private fun Inicio(banco: BancoLocal, nomeProfessor: String, onIr: (String) -> Unit) {
     val emUso = banco.equipamentos.count { it.status == "Em uso" }; val disponiveis = banco.equipamentos.count { it.status == "Disponível" }; val manutencao = banco.equipamentos.count { it.status == "Manutenção" }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(20.dp)) { Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .12f)), shape = RoundedCornerShape(22.dp)) { Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = .10f), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Home, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp).size(22.dp)) }
             Text(if (nomeProfessor.isBlank()) "Olá, professor(a)!" else "Olá, ${nomeProfessor.substringBefore(' ')}!", color = MaterialTheme.colorScheme.onPrimaryContainer, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("O que você precisa para sua próxima aula?", color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .82f))
-            Button(onClick = { onIr("Pedir") }) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Solicitar equipamento") }
+            Text("Acompanhe os equipamentos da escola e organize o que precisa para sua aula.", color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .82f), style = MaterialTheme.typography.bodyMedium)
+            Button(onClick = { onIr("Pedir") }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Solicitar equipamento") }
         } } }
         item { Text("Equipamentos da escola", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -310,15 +311,18 @@ private fun Inicio(banco: BancoLocal, nomeProfessor: String, onIr: (String) -> U
         val ativos = banco.emprestimos.filter { it.devolucao == null }
         if (ativos.isEmpty()) item { EmptyCard("Tudo em dia", if (nomeProfessor.isBlank()) "Salve seu nome em Ajustes e solicite equipamentos quando precisar." else "Você não tem equipamento emprestado no momento.", Icons.Default.Inbox) }
         items(ativos.take(4), key = { it.id }) { EmprestimoCard(it, banco.equipamentos, onAbrir = { onIr("Atividade") }) }
-        item { OutlinedButton(onClick = { onIr("Equipamentos") }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Devices, null); Spacer(Modifier.width(8.dp)); Text("Consultar catálogo de equipamentos") }
-        }
+        item { Text("Acesso rápido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FilledTonalButton(onClick = { onIr("Equipamentos") }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) { Icon(Icons.Default.Devices, null); Spacer(Modifier.width(7.dp)); Text("Consultar itens") }
+            OutlinedButton(onClick = { onIr("Atividade") }, modifier = Modifier.weight(1f).heightIn(min = 56.dp)) { Icon(Icons.AutoMirrored.Filled.Assignment, null); Spacer(Modifier.width(7.dp)); Text("Minhas atividades") }
+        } }
     }
 }
 
 @Composable
 private fun ResumoCard(titulo: String, valor: String, cor: androidx.compose.ui.graphics.Color, icone: ImageVector, modifier: Modifier = Modifier) {
-    Card(modifier, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Card(modifier, border = BorderStroke(1.dp, cor.copy(alpha = .18f)), colors = CardDefaults.cardColors(containerColor = cor.copy(alpha = .10f)), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(icone, null, tint = cor, modifier = Modifier.size(18.dp))
                 Text(valor, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
@@ -397,7 +401,7 @@ private fun Historico(banco: BancoLocal, pesquisa: String, onPesquisa: (String) 
         item { TituloSecao("Minhas atividades", "Acompanhe pedidos, itens emprestados e devoluções.") }
         item { OutlinedTextField(pesquisa, onPesquisa, Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Buscar sala ou equipamento") }, singleLine = true) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Todos", "Em aberto", "Concluídos").forEach { estado -> FilterChip(selected = filtro == estado, onClick = { onFiltro(estado) }, label = { Text(estado) }) } } }
-        if (lista.isEmpty()) item { EmptyCard(if (nomeProfessor.isBlank()) "Identifique seu perfil" else "Nenhuma atividade ainda", if (nomeProfessor.isBlank()) "Informe seu nome em Ajustes para ver seus empréstimos." else "Seus pedidos e devoluções aparecerão aqui.") }
+        if (lista.isEmpty()) item { EmptyActivityCard(if (nomeProfessor.isBlank()) "Identifique seu perfil" else "Nenhuma atividade ainda", if (nomeProfessor.isBlank()) "Informe seu nome em Ajustes para localizar seus pedidos." else "Seus pedidos e devoluções aparecerão aqui.") }
         items(lista, key = { it.id }) { em ->
             var codigoParaConfirmar by remember(em.id) { mutableStateOf<String?>(null) }
             Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -433,14 +437,16 @@ private fun Mais(
     onSair: () -> Unit
 ) {
     var nomeEditado by remember(nomeProfessor) { mutableStateOf(nomeProfessor) }
+    var perfilSalvo by remember(nomeProfessor) { mutableStateOf(false) }
     var confirmarRestauracao by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { TituloSecao("Ajustes", "Personalize o aplicativo para o seu uso.") }
         item { Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Seu perfil", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Seu nome identifica seus pedidos e atividades.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(nomeEditado, { nomeEditado = it }, Modifier.fillMaxWidth(), label = { Text("Nome do professor") }, placeholder = { Text("Ex.: Maria Silva") }, singleLine = true)
-            Button(onClick = { onNomeProfessor(nomeEditado.trim()) }, Modifier.fillMaxWidth(), enabled = nomeEditado.isNotBlank()) { Text("Salvar meu nome") }
+            OutlinedTextField(nomeEditado, { nomeEditado = it; perfilSalvo = false }, Modifier.fillMaxWidth(), label = { Text("Nome do professor") }, placeholder = { Text("Ex.: Maria Silva") }, singleLine = true)
+            Button(onClick = { onNomeProfessor(nomeEditado.trim()); perfilSalvo = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = nomeEditado.isNotBlank()) { Text("Salvar meu nome") }
+            if (perfilSalvo) Text("Nome salvo neste aparelho.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         } } }
         item { Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Aparência", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -456,8 +462,8 @@ private fun Mais(
         item { Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Ajuda e dados", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Relate um defeito ou proteja seus registros.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FilledTonalButton(onClick = onProblema, Modifier.fillMaxWidth()) { Icon(Icons.Default.ReportProblem, null); Spacer(Modifier.width(8.dp)); Text("Informar problema") }
-            Button(onClick = onExportar, Modifier.fillMaxWidth()) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar cópia dos dados") }
+            OutlinedButton(onClick = onProblema, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Default.ReportProblem, null); Spacer(Modifier.width(8.dp)); Text("Informar problema") }
+            FilledTonalButton(onClick = onExportar, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar cópia dos dados") }
             OutlinedButton(onClick = { confirmarRestauracao = true }, Modifier.fillMaxWidth()) { Text("Restaurar cópia de segurança") }
         } } }
         item { Text("Os dados ficam salvos neste aparelho. Empréstimos e atividades são vinculados ao seu nome.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -499,6 +505,28 @@ private fun EmptyCard(titulo: String, detalhe: String, icone: ImageVector = Icon
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(14.dp)) { Icon(icone, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp).size(24.dp)) }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { Text(titulo, fontWeight = FontWeight.SemiBold); Text(detalhe, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+@Composable
+private fun EmptyActivityCard(titulo: String, detalhe: String) {
+    Card(
+        Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 30.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(24.dp)) {
+                Icon(Icons.AutoMirrored.Filled.Assignment, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(20.dp).size(42.dp))
+            }
+            Text(titulo, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(detalhe, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }
