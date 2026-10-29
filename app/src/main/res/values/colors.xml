@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_blue">#FF0000CD</color>
-    <color name="brand_blue_bright">#FF3636E7</color>
-    <color name="surface_light">#FFF0F1FF</color>
-    <color name="surface_dark">#FF171A2B</color>
-    <color name="muted_text">#FF7A8094</color>
-    <color name="window_background_light">#FFF0F1FF</color>
-    <color name="window_background_dark">#FF171A2B</color>
-    <color name="ic_empresta_bg">#FF0000CD</color>
+    <color name="brand_blue">#FF2447D8</color>
+    <color name="brand_blue_bright">#FF2447D8</color>
+    <color name="surface_light">#FFF6F8FC</color>
+    <color name="surface_dark">#FF101828</color>
+    <color name="muted_text">#FF667085</color>
+    <color name="window_background_light">#FFF6F8FC</color>
+    <color name="window_background_dark">#FF101828</color>
+    <color name="ic_empresta_bg">#FF172B70</color>
+    <color name="status_available">#FF16835D</color>
+    <color name="status_pending">#FFB86A12</color>
+    <color name="status_error">#FFC53D4B</color>
 </resources>

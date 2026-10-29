@@ -13,7 +13,7 @@
 
     <!-- Tela (azul da identidade visual) -->
     <path
-        android:fillColor="#FF3636E7"
+        android:fillColor="#FF2447D8"
         android:pathData="M37,41 H71 V58 H37 Z" />
 
     <!-- Base do notebook -->

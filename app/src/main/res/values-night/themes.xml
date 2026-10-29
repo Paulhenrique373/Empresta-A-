@@ -2,7 +2,7 @@
 <resources>
     <!-- Versão do tema para o modo escuro do aparelho -->
     <style name="Theme.EmprestaAe" parent="android:Theme.Material.NoActionBar">
-        <item name="android:colorPrimary">@color/brand_blue_bright</item>
+        <item name="android:colorPrimary">@color/brand_blue</item>
         <item name="android:colorAccent">@color/brand_blue</item>
         <item name="android:windowBackground">@color/window_background_dark</item>
     </style>
