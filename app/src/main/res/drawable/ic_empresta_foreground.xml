@@ -11,9 +11,9 @@
         android:fillColor="#FFFFFFFF"
         android:pathData="M36,36 H72 A3,3 0 0 1 75,39 V62 H33 V39 A3,3 0 0 1 36,36 Z" />
 
-    <!-- Tela (verde) -->
+    <!-- Tela (azul da identidade visual) -->
     <path
-        android:fillColor="#FF315F4B"
+        android:fillColor="#FF3636E7"
         android:pathData="M37,41 H71 V58 H37 Z" />
 
     <!-- Base do notebook -->

@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Tema XML (só vale até a tela do Compose aparecer). O visual real fica no Compose, na etapa 6. -->
+    <!-- Tema XML usado durante a inicialização do Compose. -->
     <style name="Theme.EmprestaAe" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:colorPrimary">@color/brand_green</item>
+        <item name="android:colorPrimary">@color/brand_blue</item>
+        <item name="android:colorAccent">@color/brand_blue_bright</item>
         <item name="android:windowBackground">@color/window_background_light</item>
     </style>
 </resources>
