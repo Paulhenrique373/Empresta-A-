@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +27,10 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +42,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import com.example.emprestaa.ui.theme.EmprestaAêTheme
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -83,20 +97,102 @@ private fun EmprestaAppRoot() {
     val prefs = remember { context.getSharedPreferences("empresta-ae-local", 0) }
     var modo by remember { mutableStateOf(prefs.getString("modo_visual", "Aparelho") ?: "Aparelho") }
     var nomeProfessor by remember { mutableStateOf(prefs.getString("nome_professor", "") ?: "") }
+    var demonstracaoAtiva by remember { mutableStateOf(false) }
     val dark = modo == "Escuro" || (modo == "Aparelho" && isSystemInDarkTheme())
     EmprestaAêTheme(darkTheme = dark) {
-        EmprestaApp(
-            modoVisual = modo,
-            nomeProfessor = nomeProfessor,
-            onModoVisual = { modo = it; prefs.edit().putString("modo_visual", it).apply() },
-            onNomeProfessor = { nomeProfessor = it; prefs.edit().putString("nome_professor", it).apply() }
-        )
+        if (demonstracaoAtiva) {
+            EmprestaApp(
+                modoVisual = modo,
+                nomeProfessor = nomeProfessor,
+                onModoVisual = { modo = it; prefs.edit().putString("modo_visual", it).apply() },
+                onNomeProfessor = { nomeProfessor = it; prefs.edit().putString("nome_professor", it).apply() },
+                onSair = { demonstracaoAtiva = false }
+            )
+        } else TelaLogin(onContinuarDemonstracao = { demonstracaoAtiva = true })
     }
+}
+
+@Composable
+private fun TelaLogin(onContinuarDemonstracao: () -> Unit) {
+    var usuario by remember { mutableStateOf("") }
+    var senha by remember { mutableStateOf("") }
+    var erroUsuario by remember { mutableStateOf(false) }
+    var erroSenha by remember { mutableStateOf(false) }
+    var mostrarSenha by remember { mutableStateOf(false) }
+    var erroAcesso by remember { mutableStateOf(false) }
+    var mostrarRecuperacao by remember { mutableStateOf(false) }
+    var mostrarAvisoDemo by remember { mutableStateOf(false) }
+    val senhaFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val contexto = LocalContext.current
+
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+            Column(
+                Modifier.widthIn(max = 460.dp).fillMaxWidth().align(Alignment.TopCenter)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp)) {
+                    Icon(Icons.Default.Devices, contentDescription = "Símbolo Empresta Aê", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(15.dp).size(38.dp))
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("Empresta Aê", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Controle de equipamentos escolares", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Acesse sua conta", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("Informe os dados fornecidos pela sua escola.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        OutlinedTextField(
+                            value = usuario, onValueChange = { usuario = it; erroUsuario = false; erroAcesso = false },
+                            modifier = Modifier.fillMaxWidth(), label = { Text("Usuário ou e-mail") }, placeholder = { Text("Seu usuário escolar") },
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) }, singleLine = true,
+                            isError = erroUsuario, supportingText = { if (erroUsuario) Text("Informe seu usuário ou e-mail.") },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), keyboardActions = KeyboardActions(onNext = { senhaFocus.requestFocus() })
+                        )
+                        OutlinedTextField(
+                            value = senha, onValueChange = { senha = it; erroSenha = false; erroAcesso = false },
+                            modifier = Modifier.fillMaxWidth().focusRequester(senhaFocus), label = { Text("Senha") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }, singleLine = true,
+                            visualTransformation = if (mostrarSenha) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = { IconButton(onClick = { mostrarSenha = !mostrarSenha }, modifier = Modifier.size(48.dp)) { Icon(if (mostrarSenha) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = if (mostrarSenha) "Ocultar senha" else "Mostrar senha") } },
+                            isError = erroSenha, supportingText = { if (erroSenha) Text("Informe sua senha.") },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                            keyboardActions = KeyboardActions(onDone = {
+                                erroUsuario = usuario.isBlank(); erroSenha = senha.isBlank()
+                                if (!erroUsuario && !erroSenha) { focusManager.clearFocus(); erroAcesso = true }
+                            })
+                        )
+                        TextButton(onClick = { mostrarRecuperacao = true }, modifier = Modifier.align(Alignment.End)) { Text("Esqueci minha senha") }
+                        if (erroAcesso) {
+                            Text("O acesso da escola ainda não está conectado neste aplicativo. Suas credenciais não foram verificadas. Solicite ajuda à administração da escola.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Button(onClick = {
+                            erroUsuario = usuario.isBlank(); erroSenha = senha.isBlank(); erroAcesso = false
+                            if (!erroUsuario && !erroSenha) { focusManager.clearFocus(); erroAcesso = true }
+                        }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Entrar") }
+                    }
+                }
+                Text("Ainda não tem acesso? Solicite suas credenciais à administração da escola.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HorizontalDivider(Modifier.padding(vertical = 2.dp))
+                Text("Modo de demonstração", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("Explore as funções com dados locais neste aparelho. Esta opção não autentica sua identidade.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = { mostrarAvisoDemo = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text("Continuar sem conta · demonstração") }
+                Text("Empresta Aê · Controle de equipamentos escolares\nVersão ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+    }
+    if (mostrarRecuperacao) AlertDialog(onDismissRequest = { mostrarRecuperacao = false }, title = { Text("Recuperar acesso") }, text = { Text("A recuperação de senha ainda não está configurada. Entre em contato com a administração da sua escola para receber ajuda.") }, confirmButton = { TextButton(onClick = { mostrarRecuperacao = false }) { Text("Entendi") } })
+    if (mostrarAvisoDemo) AlertDialog(onDismissRequest = { mostrarAvisoDemo = false }, title = { Text("Entrar na demonstração?") }, text = { Text("Esta opção não verifica sua identidade. Use somente para conhecer o aplicativo; registros e perfil ficam armazenados localmente neste celular.") }, confirmButton = { TextButton(onClick = { mostrarAvisoDemo = false; onContinuarDemonstracao() }) { Text("Entrar na demonstração") } }, dismissButton = { TextButton(onClick = { mostrarAvisoDemo = false }) { Text("Voltar") } })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual: (String) -> Unit, onNomeProfessor: (String) -> Unit) {
+private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual: (String) -> Unit, onNomeProfessor: (String) -> Unit, onSair: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("empresta-ae-local", 0) }
     var banco by remember { mutableStateOf(runCatching { prefs.getString(DB_KEY, null)?.let { json.decodeFromString<BancoLocal>(it) } ?: bancoInicial() }.getOrElse { bancoInicial() }) }
@@ -142,7 +238,7 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
             }
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text("Empresta Aê", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(if (nomeProfessor.isBlank()) "Área do professor" else nomeProfessor, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (nomeProfessor.isBlank()) "Demonstração local · Professor" else "$nomeProfessor · Demonstração local", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface))
     }, bottomBar = {
@@ -175,7 +271,7 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
                     val finalizado = em.codigos.all { it in novosDevolvidos }
                     salvar(banco.copy(emprestimos = banco.emprestimos.map { if (it.id == em.id) it.copy(devolucao = if (finalizado) agora() else null, devolvidoPor = nomeProfessor.ifBlank { "Professor" }, devolvidos = novosDevolvidos) else it }, equipamentos = banco.equipamentos.map { if (it.codigo == codigo) it.copy(status = if (banco.problemas.any { p -> p.codigo == codigo }) "Manutenção" else "Disponível") else it })); mensagem = "Devolução de $codigo registrada."
                 })
-                else -> Mais(banco, nomeProfessor, onNomeProfessor, modoVisual, onModoVisual, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onExportar = { exportarBackup.launch("empresta-ae-backup.json") }, onImportar = { importarBackup.launch("application/json") })
+                else -> Mais(banco, nomeProfessor, onNomeProfessor, modoVisual, onModoVisual, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onExportar = { exportarBackup.launch("empresta-ae-backup.json") }, onImportar = { importarBackup.launch("application/json") }, onSair = onSair)
             }
             }
         }
@@ -333,7 +429,8 @@ private fun Mais(
     onModoVisual: (String) -> Unit,
     onProblema: () -> Unit,
     onExportar: () -> Unit,
-    onImportar: () -> Unit
+    onImportar: () -> Unit,
+    onSair: () -> Unit
 ) {
     var nomeEditado by remember(nomeProfessor) { mutableStateOf(nomeProfessor) }
     var confirmarRestauracao by remember { mutableStateOf(false) }
@@ -364,6 +461,7 @@ private fun Mais(
             OutlinedButton(onClick = { confirmarRestauracao = true }, Modifier.fillMaxWidth()) { Text("Restaurar cópia de segurança") }
         } } }
         item { Text("Os dados ficam salvos neste aparelho. Empréstimos e atividades são vinculados ao seu nome.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { OutlinedButton(onClick = onSair, Modifier.fillMaxWidth()) { Text("Voltar à tela de acesso") } }
         item { Text("${banco.equipamentos.size} equipamentos disponíveis no catálogo", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
     if (confirmarRestauracao) AlertDialog(onDismissRequest = { confirmarRestauracao = false }, title = { Text("Restaurar cópia de segurança?") }, text = { Text("A restauração substituirá os dados salvos neste celular. Você poderá escolher o arquivo na próxima etapa.") }, confirmButton = { TextButton(onClick = { confirmarRestauracao = false; onImportar() }) { Text("Continuar") } }, dismissButton = { TextButton(onClick = { confirmarRestauracao = false }) { Text("Cancelar") } })
