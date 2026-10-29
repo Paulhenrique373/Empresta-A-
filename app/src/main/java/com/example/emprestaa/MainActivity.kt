@@ -208,6 +208,8 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
     var sala by remember { mutableStateOf("") }
     val selecionados = remember { mutableStateListOf<String>() }
     var mostrarProblema by remember { mutableStateOf(false) }
+    var scannerVisible by remember { mutableStateOf(false) }
+    var codigoEscaneado by remember { mutableStateOf<String?>(null) }
     var problemaCodigo by remember { mutableStateOf("") }
     var problemaDescricao by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -231,7 +233,9 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
             .onFailure { mensagem = "Backup inválido: ${it.localizedMessage ?: "não foi possível ler o arquivo"}" }
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }, topBar = {
+    if (scannerVisible) {
+        BarcodeScannerScreen(onClose = { scannerVisible = false }, onCodeRead = { codigo -> codigoEscaneado = codigo; scannerVisible = false })
+    } else Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }, topBar = {
         TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .14f), shape = RoundedCornerShape(14.dp)) {
                 Icon(Icons.Default.Devices, contentDescription = "Empresta Aê", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(9.dp).size(24.dp))
@@ -264,8 +268,8 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
                         salvar(banco.copy(equipamentos = novos, emprestimos = listOf(novo) + banco.emprestimos))
                         onNomeProfessor(nome); selecionados.clear(); professor = nome; sala = ""; mensagem = "Pedido registrado com sucesso."
                     }
-                }, onProblema = { problemaCodigo = ""; mostrarProblema = true })
-                "Equipamentos" -> Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true })
+                }, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onEscanear = { scannerVisible = true })
+                "Equipamentos" -> Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true })
                 "Atividade" -> Historico(banco.copy(emprestimos = banco.emprestimos.filter { nomeProfessor.isNotBlank() && it.professor.equals(nomeProfessor, true) }), pesquisa, { pesquisa = it }, filtroAtividade, { filtroAtividade = it }, nomeProfessor, onDevolver = { em, codigo ->
                     val novosDevolvidos = (em.devolvidos + codigo).distinct()
                     val finalizado = em.codigos.all { it in novosDevolvidos }
@@ -285,6 +289,47 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
         if (!existe || problemaDescricao.isBlank()) mensagem = "Informe um equipamento cadastrado e descreva o problema."
         else { val p = Problema(UUID.randomUUID().toString(), codigo, problemaDescricao.trim(), agora()); val emUso = banco.equipamentos.any { it.codigo.equals(codigo, true) && it.status == "Em uso" }; salvar(banco.copy(problemas = listOf(p) + banco.problemas, equipamentos = banco.equipamentos.map { if (it.codigo.equals(codigo, true) && it.status != "Em uso") it.copy(status = "Manutenção") else it })); mostrarProblema = false; problemaCodigo = ""; problemaDescricao = ""; mensagem = if (emUso) "Problema registrado. O equipamento será encaminhado à manutenção após a devolução." else "Problema registrado; equipamento marcado para manutenção." }
     }) { Text("Registrar") } }, dismissButton = { TextButton(onClick = { mostrarProblema = false }) { Text("Cancelar") } })
+
+    codigoEscaneado?.let { codigo ->
+        val equipamento = EquipmentCodeLookup.find(banco.equipamentos, codigo)
+        val historico = equipamento?.let { eq -> banco.emprestimos.filter { eq.codigo in it.codigos }.take(3) }.orEmpty()
+        AlertDialog(
+            onDismissRequest = { codigoEscaneado = null },
+            title = { Text(if (equipamento == null) "Equipamento não encontrado" else "Equipamento identificado") },
+            text = {
+                if (equipamento == null) Text("Equipamento não encontrado. Verifique se o código está cadastrado no sistema.\n\nCódigo lido: $codigo")
+                else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(equipamento.nome, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Patrimônio / código: ${equipamento.codigo}")
+                    Text("Categoria: ${equipamento.tipo}")
+                    Text("Situação: ${equipamento.status}")
+                    if (historico.isNotEmpty()) {
+                        HorizontalDivider()
+                        Text("Histórico recente", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        historico.forEach { Text("Sala ${it.sala} · ${it.inicio} · ${if (it.devolucao == null) "Em aberto" else "Concluído"}", style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            },
+            confirmButton = {
+                if (equipamento != null) TextButton(onClick = { pesquisa = equipamento.codigo; aba = "Equipamentos"; codigoEscaneado = null }) { Text("Ver no catálogo") }
+            },
+            dismissButton = {
+                Row {
+                    if (equipamento != null && EquipmentCodeLookup.canRequest(equipamento)) TextButton(onClick = {
+                        if (equipamento.codigo !in selecionados) selecionados.add(equipamento.codigo)
+                        aba = "Pedir"
+                        codigoEscaneado = null
+                    }) { Text(if (equipamento.codigo in selecionados) "Já selecionado" else "Preparar pedido") }
+                    if (equipamento != null && EquipmentCodeLookup.canReturn(equipamento)) TextButton(onClick = {
+                        pesquisa = equipamento.codigo
+                        aba = "Atividade"
+                        codigoEscaneado = null
+                    }) { Text("Ver devolução") }
+                    TextButton(onClick = { codigoEscaneado = null }) { Text("Fechar") }
+                }
+            }
+        )
+    }
 
 }
 
@@ -333,7 +378,7 @@ private fun ResumoCard(titulo: String, valor: String, cor: androidx.compose.ui.g
 }
 
 @Composable
-private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String) -> Unit, sala: String, onSala: (String) -> Unit, selecionados: MutableList<String>, onConfirmar: () -> Unit, onProblema: () -> Unit) {
+private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String) -> Unit, sala: String, onSala: (String) -> Unit, selecionados: MutableList<String>, onConfirmar: () -> Unit, onProblema: () -> Unit, onEscanear: () -> Unit) {
     val disponiveis = banco.equipamentos.filter { it.status == "Disponível" }
     var confirmarPedido by remember { mutableStateOf(false) }
     val podeEnviar = professor.isNotBlank() && sala.isNotBlank() && selecionados.isNotEmpty() && selecionados.all { codigo -> disponiveis.any { it.codigo == codigo } }
@@ -341,6 +386,7 @@ private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String
         item { TituloSecao("Pedir equipamento", "Escolha os itens que precisa para sua aula.") }
         item { OutlinedTextField(professor, onProfessor, Modifier.fillMaxWidth(), label = { Text("Seu nome") }, placeholder = { Text("Nome do professor") }, supportingText = { Text("Usado para localizar seus pedidos depois.") }, singleLine = true) }
         item { OutlinedTextField(sala, onSala, Modifier.fillMaxWidth(), label = { Text("Sala onde vai usar") }, placeholder = { Text("Ex.: Sala 12") }, singleLine = true) }
+        item { OutlinedButton(onClick = onEscanear, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Default.Search, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Escanear equipamento") } }
         item { Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Escolha seus equipamentos", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             Text("${selecionados.size} selecionado(s) • ${disponiveis.size} livres", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -369,11 +415,14 @@ private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String
 }
 
 @Composable
-private fun Inventario(banco: BancoLocal, pesquisa: String, onPesquisa: (String) -> Unit, filtro: String, onFiltro: (String) -> Unit, onReportar: (String) -> Unit) {
+private fun Inventario(banco: BancoLocal, pesquisa: String, onPesquisa: (String) -> Unit, filtro: String, onFiltro: (String) -> Unit, onReportar: (String) -> Unit, onEscanear: () -> Unit) {
     val lista = banco.equipamentos.filter { eq -> "${eq.nome} ${eq.codigo} ${eq.tipo} ${eq.status}".contains(pesquisa, true) && (filtro == "Todos" || eq.status == filtro) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { TituloSecao("Equipamentos", "Consulte o que está livre para uso.") }
-        item { OutlinedTextField(pesquisa, onPesquisa, Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Buscar por nome ou código") }, singleLine = true) }
+        item { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(pesquisa, onPesquisa, Modifier.weight(1f), leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Buscar por nome ou código") }, singleLine = true)
+            IconButton(onClick = onEscanear, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Devices, contentDescription = "Escanear equipamento", tint = MaterialTheme.colorScheme.primary) }
+        } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf("Todos", "Disponível", "Em uso", "Manutenção").forEach { estado ->
             val rótulo = when (estado) { "Disponível" -> "Livres"; "Manutenção" -> "Reparo"; else -> estado }
             FilterChip(selected = filtro == estado, onClick = { onFiltro(estado) }, label = { Text(rótulo, fontSize = 11.sp) }, modifier = Modifier.weight(1f))
