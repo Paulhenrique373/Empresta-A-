@@ -56,6 +56,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextAlign
 import com.example.emprestaa.ui.theme.EmprestaAêTheme
+import com.example.emprestaa.data.AuthViewModel
+import com.example.emprestaa.data.AuthState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.emprestaa.data.EquipmentViewModel
+import com.example.emprestaa.data.DefectViewModel
+import com.example.emprestaa.data.DefeitoInsert
+import com.example.emprestaa.data.LoanViewModel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -97,12 +104,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun EmprestaAppRoot() {
+private fun EmprestaAppRoot(authViewModel: AuthViewModel = viewModel()) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("empresta-ae-local", 0) }
     var modo by remember { mutableStateOf(prefs.getString("modo_visual", "Aparelho") ?: "Aparelho") }
     var nomeProfessor by remember { mutableStateOf(prefs.getString("nome_professor", "") ?: "") }
-    var demonstracaoAtiva by remember { mutableStateOf(false) }
+    var demonstracaoAtiva by remember { mutableStateOf(prefs.getString("supabase_user_id", null) != null) }
     val dark = modo == "Escuro" || (modo == "Aparelho" && isSystemInDarkTheme())
     EmprestaAêTheme(darkTheme = dark) {
         if (demonstracaoAtiva) {
@@ -113,12 +120,15 @@ private fun EmprestaAppRoot() {
                 onNomeProfessor = { nomeProfessor = it; prefs.edit().putString("nome_professor", it).apply() },
                 onSair = { demonstracaoAtiva = false }
             )
-        } else TelaLogin(onContinuarDemonstracao = { demonstracaoAtiva = true })
+        } else TelaLogin(authViewModel, onContinuarDemonstracao = { user ->
+            prefs.edit().putString("supabase_user_id", user.id).putString("nome_professor", user.nome).apply()
+            nomeProfessor = user.nome; demonstracaoAtiva = true
+        })
     }
 }
 
 @Composable
-private fun TelaLogin(onContinuarDemonstracao: () -> Unit) {
+private fun TelaLogin(authViewModel: AuthViewModel, onContinuarDemonstracao: (com.example.emprestaa.data.SessaoUsuario) -> Unit) {
     var usuario by remember { mutableStateOf("") }
     var senha by remember { mutableStateOf("") }
     var erroUsuario by remember { mutableStateOf(false) }
@@ -130,6 +140,18 @@ private fun TelaLogin(onContinuarDemonstracao: () -> Unit) {
     val senhaFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val contexto = LocalContext.current
+    val authState by authViewModel.state.collectAsState()
+    var recuperacaoEnviada by remember { mutableStateOf(false) }
+    LaunchedEffect(authState) {
+        when (val state = authState) {
+            is AuthState.SignedIn -> onContinuarDemonstracao(state.user)
+            is AuthState.Error -> {
+                if (mostrarRecuperacao && state.message.startsWith("Se o e-mail")) recuperacaoEnviada = true
+                else erroAcesso = true
+            }
+            else -> Unit
+        }
+    }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
@@ -169,38 +191,57 @@ private fun TelaLogin(onContinuarDemonstracao: () -> Unit) {
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done, keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
                             keyboardActions = KeyboardActions(onDone = {
                                 erroUsuario = usuario.isBlank(); erroSenha = senha.isBlank()
-                                if (!erroUsuario && !erroSenha) { focusManager.clearFocus(); erroAcesso = true }
+                                if (!erroUsuario && !erroSenha) { focusManager.clearFocus(); authViewModel.login(usuario, senha) }
                             })
                         )
                         TextButton(onClick = { mostrarRecuperacao = true }, modifier = Modifier.align(Alignment.End)) { Text("Esqueci minha senha") }
                         if (erroAcesso) {
-                            Text("O acesso da escola ainda não está conectado neste aplicativo. Suas credenciais não foram verificadas. Solicite ajuda à administração da escola.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            Text((authState as? AuthState.Error)?.message ?: "Não foi possível entrar.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         }
                         Button(onClick = {
                             erroUsuario = usuario.isBlank(); erroSenha = senha.isBlank(); erroAcesso = false
-                            if (!erroUsuario && !erroSenha) { focusManager.clearFocus(); erroAcesso = true }
-                        }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("Entrar") }
+                            if (!erroUsuario && !erroSenha && usuario.contains("@")) { focusManager.clearFocus(); authViewModel.login(usuario, senha) } else if (!erroUsuario) erroAcesso = true
+                        }, enabled = authState !is AuthState.Loading, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { if (authState is AuthState.Loading) CircularProgressIndicator(Modifier.size(22.dp)) else Text("Entrar") }
                     }
                 }
                 Text("Ainda não tem acesso? Solicite suas credenciais à administração da escola.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider(Modifier.padding(vertical = 2.dp))
-                Text("Modo de demonstração", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text("Explore as funções com dados locais neste aparelho. Esta opção não autentica sua identidade.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = { mostrarAvisoDemo = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text("Continuar sem conta · demonstração") }
                 Text("Empresta Aê · Controle de equipamentos escolares\nVersão ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     }
     if (mostrarRecuperacao) AlertDialog(onDismissRequest = { mostrarRecuperacao = false }, title = { Text("Recuperar acesso") }, text = { Text("A recuperação de senha ainda não está configurada. Entre em contato com a administração da sua escola para receber ajuda.") }, confirmButton = { TextButton(onClick = { mostrarRecuperacao = false }) { Text("Entendi") } })
-    if (mostrarAvisoDemo) AlertDialog(onDismissRequest = { mostrarAvisoDemo = false }, title = { Text("Entrar na demonstração?") }, text = { Text("Esta opção não verifica sua identidade. Use somente para conhecer o aplicativo; registros e perfil ficam armazenados localmente neste celular.") }, confirmButton = { TextButton(onClick = { mostrarAvisoDemo = false; onContinuarDemonstracao() }) { Text("Entrar na demonstração") } }, dismissButton = { TextButton(onClick = { mostrarAvisoDemo = false }) { Text("Voltar") } })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual: (String) -> Unit, onNomeProfessor: (String) -> Unit, onSair: () -> Unit) {
+private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual: (String) -> Unit, onNomeProfessor: (String) -> Unit, onSair: () -> Unit, equipmentViewModel: EquipmentViewModel = viewModel()) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("empresta-ae-local", 0) }
-    var banco by remember { mutableStateOf(runCatching { prefs.getString(DB_KEY, null)?.let { json.decodeFromString<BancoLocal>(it) } ?: bancoInicial() }.getOrElse { bancoInicial() }) }
+    var banco by remember { mutableStateOf(BancoLocal(emptyList(), emptyList(), emptyList())) }
+    val equipamentosState by equipmentViewModel.state.collectAsState()
+    val defectViewModel: DefectViewModel = viewModel()
+    val defectState by defectViewModel.state.collectAsState()
+    val loanViewModel: LoanViewModel = viewModel()
+    val loanState by loanViewModel.state.collectAsState()
+    val userId = prefs.getString("supabase_user_id", null).orEmpty()
+    LaunchedEffect(Unit) { equipmentViewModel.carregar(); defectViewModel.carregar() }
+    LaunchedEffect(userId) { if (userId.isNotBlank()) loanViewModel.carregar(userId) }
+    LaunchedEffect(loanState) {
+        if (!loanState.loading && loanState.error == null && userId.isNotBlank()) {
+            val mapped = loanState.rows.map { row -> Emprestimo(row.id.toString(), row.usuarioId, "", listOf(row.equipamentoId.toString()), row.retirada, row.devolucao, devolvidos = if (row.status == "Devolvido") listOf(row.equipamentoId.toString()) else emptyList()) }
+            banco = banco.copy(emprestimos = mapped)
+        }
+    }
+    LaunchedEffect(equipamentosState) {
+        val remote = equipamentosState.items
+        if (!equipamentosState.loading && equipamentosState.error == null) banco = banco.copy(equipamentos = remote.map { Equipamento(it.id.toString(), it.etiqueta, "${it.marca} ${it.modelo}", it.tipo, it.status) })
+    }
+    LaunchedEffect(defectState.rows, equipamentosState.items) {
+        if (defectState.error == null && !defectState.loading) banco = banco.copy(problemas = defectState.rows.map { d ->
+            Problema(d.id.toString(), equipamentosState.items.firstOrNull { it.id == d.equipamentoId }?.etiqueta ?: d.equipamentoId.toString(), "${d.tipo}: ${d.descricao} (${d.status})", d.data)
+        })
+    }
     fun salvar(novo: BancoLocal) { banco = novo; prefs.edit().putString(DB_KEY, json.encodeToString(novo)).apply() }
 
     var aba by remember { mutableStateOf("Início") }
@@ -264,17 +305,26 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
             when (aba) {
                 "Início" -> Inicio(banco.copy(emprestimos = banco.emprestimos.filter { nomeProfessor.isNotBlank() && it.professor.equals(nomeProfessor, true) }), nomeProfessor, onIr = { aba = it })
                 "Pedir" -> Emprestar(banco, professor, { professor = it }, sala, { sala = it }, selecionados, onConfirmar = {
-                    val nome = professor.trim(); val destino = sala.trim(); val escolhidos = selecionados.toList()
-                    runCatching { LocalLoanRules.register(banco, nome, destino, escolhidos, agora()) }
-                        .onSuccess { atualizado -> salvar(atualizado); onNomeProfessor(nome); selecionados.clear(); professor = nome; sala = ""; mensagem = "Pedido registrado com sucesso." }
-                        .onFailure { mensagem = it.message ?: "Não foi possível registrar o pedido." }
+                    val escolhidos = selecionados.toList()
+                    val equipment = equipamentosState.items.firstOrNull { it.etiqueta == escolhidos.firstOrNull() }
+                    if (userId.isBlank()) mensagem = "Entre novamente para realizar empréstimos."
+                    else if (escolhidos.size != 1) mensagem = "Selecione um equipamento por operação para garantir consistência."
+                    else if (equipment == null) mensagem = "Equipamento não localizado no catálogo do Supabase."
+                    else loanViewModel.emprestar(equipment.id, userId)
                 }, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onEscanear = { scannerVisible = true })
-                "Equipamentos" -> Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true }, onEtiqueta = { equipamentoEtiqueta = it })
-                "Atividade" -> Historico(banco.copy(emprestimos = banco.emprestimos.filter { nomeProfessor.isNotBlank() && it.professor.equals(nomeProfessor, true) }), pesquisa, { pesquisa = it }, filtroAtividade, { filtroAtividade = it }, nomeProfessor, onDevolver = { em, codigo ->
-                    runCatching { LocalLoanRules.returnItem(banco, em.id, codigo, nomeProfessor, agora()) }
-                        .onSuccess { salvar(it); mensagem = "Devolução de $codigo registrada." }
-                        .onFailure { mensagem = it.message ?: "Não foi possível registrar a devolução." }
+                "Equipamentos" -> Column {
+                    when { equipamentosState.loading -> LinearProgressIndicator(Modifier.fillMaxWidth()); equipamentosState.error != null -> Text("Falha ao carregar Supabase: ${equipamentosState.error}", color = MaterialTheme.colorScheme.error); else -> Unit }
+                    Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true }, onEtiqueta = { equipamentoEtiqueta = it })
+                }
+                "Atividade" -> Column {
+                    if (loanState.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    loanState.error?.let { Text("Falha ao consultar histórico: $it", color = MaterialTheme.colorScheme.error) }
+                    Historico(banco, pesquisa, { pesquisa = it }, filtroAtividade, { filtroAtividade = it }, nomeProfessor, onDevolver = { em, _ ->
+                    val id = em.id.toLongOrNull()
+                    if (id == null || userId.isBlank()) mensagem = "Empréstimo ou sessão inválidos."
+                    else loanViewModel.devolver(id, userId)
                 })
+                }
                 else -> Mais(banco, nomeProfessor, onNomeProfessor, modoVisual, onModoVisual, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onExportar = { exportarBackup.launch("empresta-ae-backup.json") }, onImportar = { importarBackup.launch("application/json") }, onSair = onSair)
             }
             }
@@ -287,7 +337,14 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
     } }, confirmButton = { TextButton(onClick = {
         val codigo = problemaCodigo.trim(); val existe = banco.equipamentos.any { it.codigo.equals(codigo, true) }
         if (!existe || problemaDescricao.isBlank()) mensagem = "Informe um equipamento cadastrado e descreva o problema."
-        else { val p = Problema(UUID.randomUUID().toString(), codigo, problemaDescricao.trim(), agora()); val emUso = banco.equipamentos.any { it.codigo.equals(codigo, true) && it.status == "Em uso" }; salvar(banco.copy(problemas = listOf(p) + banco.problemas, equipamentos = banco.equipamentos.map { if (it.codigo.equals(codigo, true) && it.status != "Em uso") it.copy(status = "Manutenção") else it })); mostrarProblema = false; problemaCodigo = ""; problemaDescricao = ""; mensagem = if (emUso) "Problema registrado. O equipamento será encaminhado à manutenção após a devolução." else "Problema registrado; equipamento marcado para manutenção." }
+        else {
+            val equipamento = banco.equipamentos.first { it.codigo.equals(codigo, true) }
+            val userId = prefs.getString("supabase_user_id", null)
+            if (userId == null || equipamento.id.toLongOrNull() == null) mensagem = "A sessão ou identificação do equipamento não está disponível."
+            else defectViewModel.registrar(DefeitoInsert(equipamento.id.toLong(), userId, "Outros", problemaDescricao.trim())) {
+                mostrarProblema = false; problemaCodigo = ""; problemaDescricao = ""; mensagem = "Defeito registrado no Supabase."
+            }
+        }
     }) { Text("Registrar") } }, dismissButton = { TextButton(onClick = { mostrarProblema = false }) { Text("Cancelar") } })
 
     equipamentoEtiqueta?.let { equipamento ->
