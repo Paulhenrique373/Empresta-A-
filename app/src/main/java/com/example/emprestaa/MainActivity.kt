@@ -31,11 +31,15 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.BorderStroke
@@ -50,6 +54,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.style.TextAlign
 import com.example.emprestaa.ui.theme.EmprestaAêTheme
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -210,6 +215,7 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
     var mostrarProblema by remember { mutableStateOf(false) }
     var scannerVisible by remember { mutableStateOf(false) }
     var codigoEscaneado by remember { mutableStateOf<String?>(null) }
+    var equipamentoEtiqueta by remember { mutableStateOf<Equipamento?>(null) }
     var problemaCodigo by remember { mutableStateOf("") }
     var problemaDescricao by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -259,21 +265,15 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
                 "Início" -> Inicio(banco.copy(emprestimos = banco.emprestimos.filter { nomeProfessor.isNotBlank() && it.professor.equals(nomeProfessor, true) }), nomeProfessor, onIr = { aba = it })
                 "Pedir" -> Emprestar(banco, professor, { professor = it }, sala, { sala = it }, selecionados, onConfirmar = {
                     val nome = professor.trim(); val destino = sala.trim(); val escolhidos = selecionados.toList()
-                    if (nome.isBlank() || destino.isBlank()) mensagem = "Preencha o nome do responsável e a sala."
-                    else if (escolhidos.isEmpty()) mensagem = "Selecione pelo menos um equipamento."
-                    else if (escolhidos.any { codigo -> banco.equipamentos.none { it.codigo == codigo && it.status == "Disponível" } }) mensagem = "Um dos equipamentos selecionados não está mais disponível. Atualize sua seleção."
-                    else {
-                        val novos = banco.equipamentos.map { if (it.codigo in escolhidos) it.copy(status = "Em uso") else it }
-                        val novo = Emprestimo(UUID.randomUUID().toString(), nome, destino, escolhidos, agora())
-                        salvar(banco.copy(equipamentos = novos, emprestimos = listOf(novo) + banco.emprestimos))
-                        onNomeProfessor(nome); selecionados.clear(); professor = nome; sala = ""; mensagem = "Pedido registrado com sucesso."
-                    }
+                    runCatching { LocalLoanRules.register(banco, nome, destino, escolhidos, agora()) }
+                        .onSuccess { atualizado -> salvar(atualizado); onNomeProfessor(nome); selecionados.clear(); professor = nome; sala = ""; mensagem = "Pedido registrado com sucesso." }
+                        .onFailure { mensagem = it.message ?: "Não foi possível registrar o pedido." }
                 }, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onEscanear = { scannerVisible = true })
-                "Equipamentos" -> Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true })
+                "Equipamentos" -> Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true }, onEtiqueta = { equipamentoEtiqueta = it })
                 "Atividade" -> Historico(banco.copy(emprestimos = banco.emprestimos.filter { nomeProfessor.isNotBlank() && it.professor.equals(nomeProfessor, true) }), pesquisa, { pesquisa = it }, filtroAtividade, { filtroAtividade = it }, nomeProfessor, onDevolver = { em, codigo ->
-                    val novosDevolvidos = (em.devolvidos + codigo).distinct()
-                    val finalizado = em.codigos.all { it in novosDevolvidos }
-                    salvar(banco.copy(emprestimos = banco.emprestimos.map { if (it.id == em.id) it.copy(devolucao = if (finalizado) agora() else null, devolvidoPor = nomeProfessor.ifBlank { "Professor" }, devolvidos = novosDevolvidos) else it }, equipamentos = banco.equipamentos.map { if (it.codigo == codigo) it.copy(status = if (banco.problemas.any { p -> p.codigo == codigo }) "Manutenção" else "Disponível") else it })); mensagem = "Devolução de $codigo registrada."
+                    runCatching { LocalLoanRules.returnItem(banco, em.id, codigo, nomeProfessor, agora()) }
+                        .onSuccess { salvar(it); mensagem = "Devolução de $codigo registrada." }
+                        .onFailure { mensagem = it.message ?: "Não foi possível registrar a devolução." }
                 })
                 else -> Mais(banco, nomeProfessor, onNomeProfessor, modoVisual, onModoVisual, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onExportar = { exportarBackup.launch("empresta-ae-backup.json") }, onImportar = { importarBackup.launch("application/json") }, onSair = onSair)
             }
@@ -289,6 +289,23 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
         if (!existe || problemaDescricao.isBlank()) mensagem = "Informe um equipamento cadastrado e descreva o problema."
         else { val p = Problema(UUID.randomUUID().toString(), codigo, problemaDescricao.trim(), agora()); val emUso = banco.equipamentos.any { it.codigo.equals(codigo, true) && it.status == "Em uso" }; salvar(banco.copy(problemas = listOf(p) + banco.problemas, equipamentos = banco.equipamentos.map { if (it.codigo.equals(codigo, true) && it.status != "Em uso") it.copy(status = "Manutenção") else it })); mostrarProblema = false; problemaCodigo = ""; problemaDescricao = ""; mensagem = if (emUso) "Problema registrado. O equipamento será encaminhado à manutenção após a devolução." else "Problema registrado; equipamento marcado para manutenção." }
     }) { Text("Registrar") } }, dismissButton = { TextButton(onClick = { mostrarProblema = false }) { Text("Cancelar") } })
+
+    equipamentoEtiqueta?.let { equipamento ->
+        EquipmentLabelDialog(
+            equipment = equipamento,
+            onDismiss = { equipamentoEtiqueta = null },
+            onShare = { label ->
+                runCatching { shareEquipmentLabel(context, equipamento, label) }
+                    .onSuccess { equipamentoEtiqueta = null }
+                    .onFailure { mensagem = it.localizedMessage ?: "Não foi possível compartilhar a etiqueta." }
+            },
+            onPrint = { label ->
+                runCatching { printEquipmentLabel(context, equipamento, label) }
+                    .onSuccess { equipamentoEtiqueta = null }
+                    .onFailure { mensagem = it.localizedMessage ?: "Não foi possível abrir a impressão." }
+            }
+        )
+    }
 
     codigoEscaneado?.let { codigo ->
         val equipamento = EquipmentCodeLookup.find(banco.equipamentos, codigo)
@@ -336,6 +353,8 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
 @Composable
 private fun Inicio(banco: BancoLocal, nomeProfessor: String, onIr: (String) -> Unit) {
     val emUso = banco.equipamentos.count { it.status == "Em uso" }; val disponiveis = banco.equipamentos.count { it.status == "Disponível" }; val manutencao = banco.equipamentos.count { it.status == "Manutenção" }
+    val notebooks = banco.equipamentos.count { it.tipo.contains("notebook", ignoreCase = true) }
+    val tablets = banco.equipamentos.count { it.tipo.contains("tablet", ignoreCase = true) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .12f)), shape = RoundedCornerShape(22.dp)) { Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = .10f), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Home, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp).size(22.dp)) }
@@ -344,6 +363,10 @@ private fun Inicio(banco: BancoLocal, nomeProfessor: String, onIr: (String) -> U
             Button(onClick = { onIr("Pedir") }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Solicitar equipamento") }
         } } }
         item { Text("Equipamentos da escola", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ResumoCard("Notebooks", notebooks.toString(), MaterialTheme.colorScheme.primary, Icons.Default.Devices, Modifier.weight(1f))
+            ResumoCard("Tablets", tablets.toString(), MaterialTheme.colorScheme.primary, Icons.Default.Devices, Modifier.weight(1f))
+        } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ResumoCard("Livres", disponiveis.toString(), MaterialTheme.colorScheme.secondary, Icons.Default.CheckCircle, Modifier.weight(1f))
             ResumoCard("Em uso", emUso.toString(), MaterialTheme.colorScheme.primary, Icons.Default.Devices, Modifier.weight(1f))
@@ -354,6 +377,7 @@ private fun Inicio(banco: BancoLocal, nomeProfessor: String, onIr: (String) -> U
             TextButton(onClick = { onIr("Atividade") }) { Text("Ver atividade") }
         } }
         val ativos = banco.emprestimos.filter { it.devolucao == null }
+        if (banco.equipamentos.isEmpty()) item { EmptyCard("Catálogo vazio", "Solicite à administração da escola o cadastro dos equipamentos.", Icons.Default.Devices) }
         if (ativos.isEmpty()) item { EmptyCard("Tudo em dia", if (nomeProfessor.isBlank()) "Salve seu nome em Ajustes e solicite equipamentos quando precisar." else "Você não tem equipamento emprestado no momento.", Icons.Default.Inbox) }
         items(ativos.take(4), key = { it.id }) { EmprestimoCard(it, banco.equipamentos, onAbrir = { onIr("Atividade") }) }
         item { Text("Acesso rápido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
@@ -415,7 +439,7 @@ private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String
 }
 
 @Composable
-private fun Inventario(banco: BancoLocal, pesquisa: String, onPesquisa: (String) -> Unit, filtro: String, onFiltro: (String) -> Unit, onReportar: (String) -> Unit, onEscanear: () -> Unit) {
+private fun Inventario(banco: BancoLocal, pesquisa: String, onPesquisa: (String) -> Unit, filtro: String, onFiltro: (String) -> Unit, onReportar: (String) -> Unit, onEscanear: () -> Unit, onEtiqueta: (Equipamento) -> Unit) {
     val lista = banco.equipamentos.filter { eq -> "${eq.nome} ${eq.codigo} ${eq.tipo} ${eq.status}".contains(pesquisa, true) && (filtro == "Todos" || eq.status == filtro) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { TituloSecao("Equipamentos", "Consulte o que está livre para uso.") }
@@ -434,9 +458,30 @@ private fun Inventario(banco: BancoLocal, pesquisa: String, onPesquisa: (String)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text(eq.nome, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyLarge); Text("${eq.tipo}  •  ${eq.codigo}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 StatusPill(eq.status)
             }
-            TextButton(onClick = { onReportar(eq.codigo) }, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp)) { Icon(Icons.Default.ReportProblem, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("Informar problema") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { onReportar(eq.codigo) }, contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp)) { Icon(Icons.Default.ReportProblem, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("Informar problema") }
+                FilledTonalButton(onClick = { onEtiqueta(eq) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)) { Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(5.dp)); Text("Etiqueta") }
+            }
         } } }
         if (lista.isEmpty()) item { EmptyCard("Nenhum equipamento encontrado", "Altere o filtro ou tente outro nome ou código.") }
+        if (banco.problemas.isNotEmpty()) {
+            item { Text("Problemas relatados", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+            items(banco.problemas, key = { "problem-${it.id}" }) { problem ->
+                val equipment = banco.equipamentos.firstOrNull { it.codigo == problem.codigo }
+                Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(equipment?.nome ?: "Equipamento ${problem.codigo}", fontWeight = FontWeight.SemiBold)
+                                Text("${problem.codigo} · Relatado ${problem.data}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            equipment?.let { StatusPill(it.status) }
+                        }
+                        Text(problem.descricao, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -578,4 +623,64 @@ private fun EmptyActivityCard(titulo: String, detalhe: String) {
             Text(detalhe, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
+}
+
+@Composable
+private fun EquipmentLabelDialog(
+    equipment: Equipamento,
+    onDismiss: () -> Unit,
+    onShare: (EquipmentLabel) -> Unit,
+    onPrint: (EquipmentLabel) -> Unit
+) {
+    var format by remember(equipment.id) { mutableStateOf(LabelFormat.QR) }
+    val generated = remember(equipment.id, equipment.codigo, equipment.nome, equipment.tipo, format) {
+        runCatching { EquipmentLabelGenerator.generate(equipment, format) }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Etiqueta do equipamento") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(equipment.nome, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                Text("Código ${equipment.codigo} · ${equipment.tipo}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilterChip(selected = format == LabelFormat.QR, onClick = { format = LabelFormat.QR }, label = { Text("QR Code") })
+                    FilterChip(selected = format == LabelFormat.CODE_128, onClick = { format = LabelFormat.CODE_128 }, label = { Text("Código 128") })
+                }
+                generated.onSuccess { label ->
+                    androidx.compose.foundation.Image(
+                        bitmap = label.bitmap.asImageBitmap(),
+                        contentDescription = "Prévia da etiqueta ${equipment.codigo} em ${format.title}",
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 230.dp),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                    )
+                    Text(
+                        if (format == LabelFormat.QR) "O QR identifica este item pelo seu ID interno permanente." else "O código de barras representa ${equipment.codigo}.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }.onFailure { error ->
+                    Text(error.message ?: "Não foi possível gerar esta etiqueta.", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { generated.getOrNull()?.let(onShare) }, enabled = generated.isSuccess) {
+                Icon(Icons.Default.Share, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Compartilhar")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { generated.getOrNull()?.let(onPrint) }, enabled = generated.isSuccess) {
+                    Icon(Icons.Default.Print, contentDescription = null)
+                    Spacer(Modifier.width(5.dp))
+                    Text("Imprimir")
+                }
+                TextButton(onClick = onDismiss) { Text("Fechar") }
+            }
+        }
+    )
 }

@@ -84,6 +84,7 @@ internal fun BarcodeScannerScreen(onClose: () -> Unit, onCodeRead: (String) -> U
     var torchOn by remember { mutableStateOf(false) }
     var boundCamera by remember { mutableStateOf<Camera?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    val screenDisposed = remember { AtomicBoolean(false) }
     val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember {
         val options = BarcodeScannerOptions.Builder()
@@ -104,8 +105,9 @@ internal fun BarcodeScannerScreen(onClose: () -> Unit, onCodeRead: (String) -> U
         permissionDenied = !granted
     }
 
-    DisposableEffect(scanner, analyzerExecutor) {
+    DisposableEffect(scanner, analyzerExecutor, screenDisposed) {
         onDispose {
+            screenDisposed.set(true)
             cameraProvider?.unbindAll()
             scanner.close()
             analyzerExecutor.shutdown()
@@ -148,34 +150,36 @@ internal fun BarcodeScannerScreen(onClose: () -> Unit, onCodeRead: (String) -> U
                                 providerFuture.addListener({
                                     try {
                                         val provider = providerFuture.get()
-                                        cameraProvider = provider
-                                        val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                                        val processing = AtomicBoolean(false)
-                                        val delivered = AtomicBoolean(false)
-                                        val analysis = ImageAnalysis.Builder()
-                                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                            .build()
-                                        analysis.setAnalyzer(analyzerExecutor) { proxy ->
-                                            val image = proxy.image
-                                            if (image == null || delivered.get() || !processing.compareAndSet(false, true)) {
-                                                proxy.close()
-                                            } else {
-                                                scanner.process(InputImage.fromMediaImage(image, proxy.imageInfo.rotationDegrees))
-                                                    .addOnSuccessListener { barcodes ->
-                                                        val raw = barcodes.firstNotNullOfOrNull { it.rawValue?.trim()?.takeIf(String::isNotEmpty) }
-                                                        if (raw != null && delivered.compareAndSet(false, true)) latestOnCodeRead(raw)
-                                                    }
-                                                    .addOnFailureListener { cameraError = "Não foi possível ler este código. Tente novamente." }
-                                                    .addOnCompleteListener {
-                                                        proxy.close()
-                                                        processing.set(false)
-                                                    }
+                                        if (!screenDisposed.get()) {
+                                            cameraProvider = provider
+                                            val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+                                            val processing = AtomicBoolean(false)
+                                            val delivered = AtomicBoolean(false)
+                                            val analysis = ImageAnalysis.Builder()
+                                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                                .build()
+                                            analysis.setAnalyzer(analyzerExecutor) { proxy ->
+                                                val image = proxy.image
+                                                if (image == null || delivered.get() || !processing.compareAndSet(false, true)) {
+                                                    proxy.close()
+                                                } else {
+                                                    scanner.process(InputImage.fromMediaImage(image, proxy.imageInfo.rotationDegrees))
+                                                        .addOnSuccessListener { barcodes ->
+                                                            val raw = barcodes.firstNotNullOfOrNull { it.rawValue?.trim()?.takeIf(String::isNotEmpty) }
+                                                            if (raw != null && delivered.compareAndSet(false, true)) latestOnCodeRead(raw)
+                                                        }
+                                                        .addOnFailureListener { cameraError = "Não foi possível ler este código. Tente novamente." }
+                                                        .addOnCompleteListener {
+                                                            proxy.close()
+                                                            processing.set(false)
+                                                        }
+                                                }
                                             }
+                                            provider.unbindAll()
+                                            boundCamera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
                                         }
-                                        provider.unbindAll()
-                                        boundCamera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
                                     } catch (_: Exception) {
-                                        cameraError = "Não foi possível iniciar a câmera. Verifique se ela está disponível e tente novamente."
+                                        if (!screenDisposed.get()) cameraError = "Não foi possível iniciar a câmera. Verifique se ela está disponível e tente novamente."
                                     }
                                 }, ContextCompat.getMainExecutor(viewContext))
                             }

@@ -125,6 +125,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.4.0")
     implementation("androidx.camera:camera-view:1.4.0")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("com.google.zxing:core:3.5.4")
 
     // ---- Testes unitários (rodam sem celular e sem internet) ----
     testImplementation("junit:junit:4.13.2")
