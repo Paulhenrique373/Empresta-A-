@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App -->
+    <string name="app_name">Empresta Aê</string>
+    <string name="app_descricao">Controle de empréstimo de notebooks e tablets</string>
+    <string name="instituicao_nome">E.E. Fernando Pessoa</string>
+    <string name="instituicao_curso">Curso Técnico em Desenvolvimento de Sistemas - 2026</string>
+
+    <!-- Navegação inferior -->
+    <string name="nav_inicio">Início</string>
+    <string name="nav_emprestar">Emprestar</string>
+    <string name="nav_devolver">Devolver</string>
+    <string name="nav_historico">Histórico</string>
+    <string name="nav_problemas">Problemas</string>
+
+    <!-- Ações comuns -->
+    <string name="acao_ok">OK</string>
+    <string name="acao_cancelar">Cancelar</string>
+    <string name="acao_confirmar">Confirmar</string>
+    <string name="acao_voltar">Voltar</string>
+    <string name="acao_fechar">Fechar</string>
+    <string name="acao_sair">Sair</string>
+    <string name="acao_tentar_novamente">Tentar novamente</string>
+
+    <!-- Estados comuns -->
+    <string name="carregando">Carregando…</string>
+    <string name="erro_generico">Algo deu errado. Tente novamente.</string>
+    <string name="erro_sem_internet">Sem conexão com a internet. Verifique sua rede e tente novamente.</string>
+
+    <!-- Tela de configuração pendente -->
+    <string name="config_pendente_titulo">Configuração pendente</string>
+    <string name="config_pendente_mensagem">O aplicativo ainda não foi conectado ao Supabase. Informe SUPABASE_URL e SUPABASE_ANON_KEY no arquivo local.properties e gere o app novamente.</string>
+
+    <!-- Acessibilidade -->
+    <string name="cd_icone_app">Ícone do Empresta Aê</string>
+</resources>
