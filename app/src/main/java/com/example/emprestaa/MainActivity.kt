@@ -2,10 +2,8 @@ package com.example.emprestaa
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,7 +21,6 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Settings
@@ -64,15 +61,10 @@ import com.example.emprestaa.data.DefectViewModel
 import com.example.emprestaa.data.DefeitoInsert
 import com.example.emprestaa.data.LoanViewModel
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-
-private const val DB_KEY = "empresta-ae:database:v1"
-private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
 @Serializable
 data class Equipamento(val id: String, val codigo: String, val nome: String, val tipo: String, val status: String = "Disponível")
@@ -83,16 +75,6 @@ data class Problema(val id: String, val codigo: String, val descricao: String, v
 @Serializable
 data class BancoLocal(val equipamentos: List<Equipamento>, val emprestimos: List<Emprestimo>, val problemas: List<Problema>)
 
-private fun bancoInicial() = BancoLocal(
-    equipamentos = listOf(
-        Equipamento("e1", "NB-001", "Notebook Dell Latitude", "Notebook"),
-        Equipamento("e2", "NB-002", "Notebook Lenovo ThinkPad", "Notebook"),
-        Equipamento("e3", "NB-003", "Notebook Acer Aspire", "Notebook"),
-        Equipamento("TB-001", "TB-001", "Tablet Samsung Galaxy Tab", "Tablet"),
-        Equipamento("TB-002", "TB-002", "Tablet Lenovo Tab", "Tablet"),
-        Equipamento("NB-004", "NB-004", "Notebook HP ProBook", "Notebook", "Manutenção")
-    ), emprestimos = emptyList(), problemas = emptyList()
-)
 private fun agora(): String = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")).format(Date())
 
 class MainActivity : ComponentActivity() {
@@ -117,8 +99,15 @@ private fun EmprestaAppRoot(authViewModel: AuthViewModel = viewModel()) {
                 modoVisual = modo,
                 nomeProfessor = nomeProfessor,
                 onModoVisual = { modo = it; prefs.edit().putString("modo_visual", it).apply() },
-                onNomeProfessor = { nomeProfessor = it; prefs.edit().putString("nome_professor", it).apply() },
-                onSair = { demonstracaoAtiva = false }
+                onSair = {
+                    authViewModel.logout()
+                    prefs.edit()
+                        .remove("supabase_user_id")
+                        .remove("nome_professor")
+                        .apply()
+                    nomeProfessor = ""
+                    demonstracaoAtiva = false
+                }
             )
         } else TelaLogin(authViewModel, onContinuarDemonstracao = { user ->
             prefs.edit().putString("supabase_user_id", user.id).putString("nome_professor", user.nome).apply()
@@ -215,17 +204,17 @@ private fun TelaLogin(authViewModel: AuthViewModel, onContinuarDemonstracao: (co
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual: (String) -> Unit, onNomeProfessor: (String) -> Unit, onSair: () -> Unit, equipmentViewModel: EquipmentViewModel = viewModel()) {
+private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual: (String) -> Unit, onSair: () -> Unit, equipmentViewModel: EquipmentViewModel = viewModel()) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("empresta-ae-local", 0) }
     var banco by remember { mutableStateOf(BancoLocal(emptyList(), emptyList(), emptyList())) }
     val equipamentosState by equipmentViewModel.state.collectAsState()
-    val defectViewModel: DefectViewModel = viewModel()
-    val defectState by defectViewModel.state.collectAsState()
-    val loanViewModel: LoanViewModel = viewModel()
-    val loanState by loanViewModel.state.collectAsState()
     val userId = prefs.getString("supabase_user_id", null).orEmpty()
-    LaunchedEffect(Unit) { equipmentViewModel.carregar(); defectViewModel.carregar() }
+    val defectViewModel: DefectViewModel = viewModel(key = "defeitos-$userId")
+    val defectState by defectViewModel.state.collectAsState()
+    val loanViewModel: LoanViewModel = viewModel(key = "emprestimos-$userId")
+    val loanState by loanViewModel.state.collectAsState()
+    LaunchedEffect(userId) { equipmentViewModel.carregar(); defectViewModel.carregar() }
     LaunchedEffect(userId) { if (userId.isNotBlank()) loanViewModel.carregar(userId) }
     LaunchedEffect(loanState) {
         if (!loanState.loading && loanState.error == null && userId.isNotBlank()) {
@@ -242,16 +231,12 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
             Problema(d.id.toString(), equipamentosState.items.firstOrNull { it.id == d.equipamentoId }?.etiqueta ?: d.equipamentoId.toString(), "${d.tipo}: ${d.descricao} (${d.status})", d.data)
         })
     }
-    fun salvar(novo: BancoLocal) { banco = novo; prefs.edit().putString(DB_KEY, json.encodeToString(novo)).apply() }
 
     var aba by remember { mutableStateOf("Início") }
     var pesquisa by remember { mutableStateOf("") }
     var filtroEquipamento by remember { mutableStateOf("Todos") }
     var filtroAtividade by remember { mutableStateOf("Todos") }
     var mensagem by remember { mutableStateOf<String?>(null) }
-    var professor by remember { mutableStateOf(nomeProfessor) }
-    LaunchedEffect(nomeProfessor) { professor = nomeProfessor }
-    var sala by remember { mutableStateOf("") }
     val selecionados = remember { mutableStateListOf<String>() }
     var mostrarProblema by remember { mutableStateOf(false) }
     var scannerVisible by remember { mutableStateOf(false) }
@@ -263,23 +248,6 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
     LaunchedEffect(mensagem) {
         mensagem?.let { snackbarHostState.showSnackbar(it); mensagem = null }
     }
-    val exportarBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(json.encodeToString(banco).toByteArray(Charsets.UTF_8)) } ?: error("Não foi possível abrir o arquivo.") }
-            .onSuccess { mensagem = "Backup exportado com sucesso." }.onFailure { mensagem = "Não foi possível exportar o backup: ${it.localizedMessage ?: "erro de gravação"}" }
-    }
-    val importarBackup = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) runCatching {
-            val conteudo = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: error("Arquivo vazio ou inacessível.")
-            json.decodeFromString<BancoLocal>(conteudo).also { novo ->
-                require(novo.equipamentos.isNotEmpty()) { "O backup não possui equipamentos." }
-                require(novo.equipamentos.map { it.codigo.lowercase() }.distinct().size == novo.equipamentos.size) { "O backup contém códigos repetidos." }
-                val codigos = novo.equipamentos.map { it.codigo }.toSet()
-                require(novo.emprestimos.all { em -> em.codigos.all { it in codigos } }) { "Há empréstimos associados a códigos inexistentes." }
-            }
-        }.onSuccess { salvar(it); mensagem = "Backup restaurado com sucesso." }
-            .onFailure { mensagem = "Backup inválido: ${it.localizedMessage ?: "não foi possível ler o arquivo"}" }
-    }
-
     if (scannerVisible) {
         BarcodeScannerScreen(onClose = { scannerVisible = false }, onCodeRead = { codigo -> codigoEscaneado = codigo; scannerVisible = false })
     } else Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }, topBar = {
@@ -289,7 +257,7 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
             }
             Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text("Empresta Aê", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                Text(if (nomeProfessor.isBlank()) "Professor · Demonstração local" else "$nomeProfessor · Demonstração local", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .82f))
+                Text(if (nomeProfessor.isBlank()) "Professor" else nomeProfessor, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .82f))
             }
         } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, actionIconContentColor = MaterialTheme.colorScheme.onPrimary, navigationIconContentColor = MaterialTheme.colorScheme.onPrimary))
     }, bottomBar = {
@@ -302,31 +270,31 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
     }) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.widthIn(max = 760.dp).fillMaxHeight().align(Alignment.TopCenter)) {
-            when (aba) {
-                "Início" -> Inicio(banco.copy(emprestimos = banco.emprestimos.filter { nomeProfessor.isNotBlank() && it.professor.equals(nomeProfessor, true) }), nomeProfessor, onIr = { aba = it })
-                "Pedir" -> Emprestar(banco, professor, { professor = it }, sala, { sala = it }, selecionados, onConfirmar = {
-                    val escolhidos = selecionados.toList()
-                    val equipment = equipamentosState.items.firstOrNull { it.etiqueta == escolhidos.firstOrNull() }
-                    if (userId.isBlank()) mensagem = "Entre novamente para realizar empréstimos."
-                    else if (escolhidos.size != 1) mensagem = "Selecione um equipamento por operação para garantir consistência."
-                    else if (equipment == null) mensagem = "Equipamento não localizado no catálogo do Supabase."
-                    else loanViewModel.emprestar(equipment.id, userId)
-                }, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onEscanear = { scannerVisible = true })
-                "Equipamentos" -> Column {
-                    when { equipamentosState.loading -> LinearProgressIndicator(Modifier.fillMaxWidth()); equipamentosState.error != null -> Text("Falha ao carregar Supabase: ${equipamentosState.error}", color = MaterialTheme.colorScheme.error); else -> Unit }
-                    Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true }, onEtiqueta = { equipamentoEtiqueta = it })
+                when (aba) {
+                    "Início" -> Inicio(banco, nomeProfessor, onIr = { aba = it })
+                    "Pedir" -> Emprestar(banco, selecionados, onConfirmar = {
+                        val escolhidos = selecionados.toList()
+                        val equipment = equipamentosState.items.firstOrNull { it.etiqueta == escolhidos.firstOrNull() }
+                        if (userId.isBlank()) mensagem = "Entre novamente para realizar empréstimos."
+                        else if (escolhidos.size != 1) mensagem = "Selecione um equipamento por operação para garantir consistência."
+                        else if (equipment == null) mensagem = "Equipamento não localizado no catálogo do Supabase."
+                        else loanViewModel.emprestar(equipment.id, userId)
+                    }, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onEscanear = { scannerVisible = true })
+                    "Equipamentos" -> Column {
+                        when { equipamentosState.loading -> LinearProgressIndicator(Modifier.fillMaxWidth()); equipamentosState.error != null -> Text("Falha ao carregar Supabase: ${equipamentosState.error}", color = MaterialTheme.colorScheme.error); else -> Unit }
+                        Inventario(banco, pesquisa, { pesquisa = it }, filtroEquipamento, { filtroEquipamento = it }, onReportar = { codigo -> problemaCodigo = codigo; mostrarProblema = true }, onEscanear = { scannerVisible = true }, onEtiqueta = { equipamentoEtiqueta = it })
+                    }
+                    "Atividade" -> Column {
+                        if (loanState.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        loanState.error?.let { Text("Falha ao consultar histórico: $it", color = MaterialTheme.colorScheme.error) }
+                        Historico(banco, pesquisa, { pesquisa = it }, filtroAtividade, { filtroAtividade = it }, nomeProfessor, onDevolver = { em, _ ->
+                            val id = em.id.toLongOrNull()
+                            if (id == null || userId.isBlank()) mensagem = "Empréstimo ou sessão inválidos."
+                            else loanViewModel.devolver(id, userId)
+                        })
+                    }
+                    else -> Mais(banco, nomeProfessor, modoVisual, onModoVisual, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onSair = onSair)
                 }
-                "Atividade" -> Column {
-                    if (loanState.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    loanState.error?.let { Text("Falha ao consultar histórico: $it", color = MaterialTheme.colorScheme.error) }
-                    Historico(banco, pesquisa, { pesquisa = it }, filtroAtividade, { filtroAtividade = it }, nomeProfessor, onDevolver = { em, _ ->
-                    val id = em.id.toLongOrNull()
-                    if (id == null || userId.isBlank()) mensagem = "Empréstimo ou sessão inválidos."
-                    else loanViewModel.devolver(id, userId)
-                })
-                }
-                else -> Mais(banco, nomeProfessor, onNomeProfessor, modoVisual, onModoVisual, onProblema = { problemaCodigo = ""; mostrarProblema = true }, onExportar = { exportarBackup.launch("empresta-ae-backup.json") }, onImportar = { importarBackup.launch("application/json") }, onSair = onSair)
-            }
             }
         }
     }
@@ -380,7 +348,7 @@ private fun EmprestaApp(modoVisual: String, nomeProfessor: String, onModoVisual:
                     if (historico.isNotEmpty()) {
                         HorizontalDivider()
                         Text("Histórico recente", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        historico.forEach { Text("Sala ${it.sala} · ${it.inicio} · ${if (it.devolucao == null) "Em aberto" else "Concluído"}", style = MaterialTheme.typography.bodySmall) }
+                        historico.forEach { Text("${it.inicio} · ${if (it.devolucao == null) "Em aberto" else "Concluído"}", style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             },
@@ -435,7 +403,7 @@ private fun Inicio(banco: BancoLocal, nomeProfessor: String, onIr: (String) -> U
         } }
         val ativos = banco.emprestimos.filter { it.devolucao == null }
         if (banco.equipamentos.isEmpty()) item { EmptyCard("Catálogo vazio", "Solicite à administração da escola o cadastro dos equipamentos.", Icons.Default.Devices) }
-        if (ativos.isEmpty()) item { EmptyCard("Tudo em dia", if (nomeProfessor.isBlank()) "Salve seu nome em Ajustes e solicite equipamentos quando precisar." else "Você não tem equipamento emprestado no momento.", Icons.Default.Inbox) }
+        if (ativos.isEmpty()) item { EmptyCard("Tudo em dia", if (nomeProfessor.isBlank()) "Solicite equipamentos quando precisar." else "Você não tem equipamento emprestado no momento.", Icons.Default.Inbox) }
         items(ativos.take(4), key = { it.id }) { EmprestimoCard(it, banco.equipamentos, onAbrir = { onIr("Atividade") }) }
         item { Text("Acesso rápido", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -459,14 +427,12 @@ private fun ResumoCard(titulo: String, valor: String, cor: androidx.compose.ui.g
 }
 
 @Composable
-private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String) -> Unit, sala: String, onSala: (String) -> Unit, selecionados: MutableList<String>, onConfirmar: () -> Unit, onProblema: () -> Unit, onEscanear: () -> Unit) {
+private fun Emprestar(banco: BancoLocal, selecionados: MutableList<String>, onConfirmar: () -> Unit, onProblema: () -> Unit, onEscanear: () -> Unit) {
     val disponiveis = banco.equipamentos.filter { it.status == "Disponível" }
     var confirmarPedido by remember { mutableStateOf(false) }
-    val podeEnviar = professor.isNotBlank() && sala.isNotBlank() && selecionados.isNotEmpty() && selecionados.all { codigo -> disponiveis.any { it.codigo == codigo } }
+    val podeEnviar = selecionados.isNotEmpty() && selecionados.all { codigo -> disponiveis.any { it.codigo == codigo } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { TituloSecao("Pedir equipamento", "Escolha os itens que precisa para sua aula.") }
-        item { OutlinedTextField(professor, onProfessor, Modifier.fillMaxWidth(), label = { Text("Seu nome") }, placeholder = { Text("Nome do professor") }, supportingText = { Text("Usado para localizar seus pedidos depois.") }, singleLine = true) }
-        item { OutlinedTextField(sala, onSala, Modifier.fillMaxWidth(), label = { Text("Sala onde vai usar") }, placeholder = { Text("Ex.: Sala 12") }, singleLine = true) }
         item { OutlinedButton(onClick = onEscanear, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Default.Search, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Escanear equipamento") } }
         item { Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Escolha seus equipamentos", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -476,7 +442,7 @@ private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String
         items(disponiveis, key = { it.id }) { eq -> Card(Modifier.fillMaxWidth().clickable { if (eq.codigo in selecionados) selecionados.remove(eq.codigo) else selecionados.add(eq.codigo) }, border = BorderStroke(1.dp, if (eq.codigo in selecionados) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant), colors = CardDefaults.cardColors(containerColor = if (eq.codigo in selecionados) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .65f) else MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(16.dp)) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { Checkbox(eq.codigo in selecionados, { if (it) selecionados.add(eq.codigo) else selecionados.remove(eq.codigo) }); Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Devices, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(9.dp).size(22.dp)) }; Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text(eq.nome, fontWeight = FontWeight.SemiBold); Text("${eq.tipo}  •  ${eq.codigo}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text("Livre", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold) }
         } }
-        if (!podeEnviar) item { Text("Preencha seu nome e a sala e selecione ao menos um equipamento.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (!podeEnviar) item { Text("Selecione ao menos um equipamento.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Button(onClick = { confirmarPedido = true }, Modifier.fillMaxWidth(), enabled = podeEnviar) { Icon(Icons.AutoMirrored.Filled.Assignment, null); Spacer(Modifier.width(8.dp)); Text("Revisar pedido") } }
         item { OutlinedButton(onClick = onProblema, Modifier.fillMaxWidth()) { Icon(Icons.Default.ReportProblem, null); Spacer(Modifier.width(8.dp)); Text("Informar problema em equipamento") } }
     }
@@ -484,9 +450,6 @@ private fun Emprestar(banco: BancoLocal, professor: String, onProfessor: (String
         onDismissRequest = { confirmarPedido = false },
         title = { Text("Confirme seu pedido") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Professor(a): $professor")
-            Text("Sala: $sala")
-            HorizontalDivider()
             Text("Equipamentos (${selecionados.size})", fontWeight = FontWeight.SemiBold)
             selecionados.forEach { codigo -> Text("• ${disponiveis.firstOrNull { it.codigo == codigo }?.nome ?: codigo} ($codigo)", style = MaterialTheme.typography.bodySmall) }
         } },
@@ -546,17 +509,17 @@ private fun Inventario(banco: BancoLocal, pesquisa: String, onPesquisa: (String)
 private fun Historico(banco: BancoLocal, pesquisa: String, onPesquisa: (String) -> Unit, filtro: String, onFiltro: (String) -> Unit, nomeProfessor: String, onDevolver: (Emprestimo, String) -> Unit) {
     val lista = banco.emprestimos.filter { em ->
         val nomesItens = em.codigos.mapNotNull { codigo -> banco.equipamentos.firstOrNull { it.codigo == codigo }?.nome }.joinToString(" ")
-        "${em.sala} ${em.codigos.joinToString()} $nomesItens".contains(pesquisa, true) && when (filtro) { "Em aberto" -> em.devolucao == null; "Concluídos" -> em.devolucao != null; else -> true }
+        "${em.codigos.joinToString()} $nomesItens".contains(pesquisa, true) && when (filtro) { "Em aberto" -> em.devolucao == null; "Concluídos" -> em.devolucao != null; else -> true }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { TituloSecao("Minhas atividades", "Acompanhe pedidos, itens emprestados e devoluções.") }
-        item { OutlinedTextField(pesquisa, onPesquisa, Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Buscar sala ou equipamento") }, singleLine = true) }
+        item { OutlinedTextField(pesquisa, onPesquisa, Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Buscar equipamento") }, singleLine = true) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Todos", "Em aberto", "Concluídos").forEach { estado -> FilterChip(selected = filtro == estado, onClick = { onFiltro(estado) }, label = { Text(estado) }) } } }
-        if (lista.isEmpty()) item { EmptyActivityCard(if (nomeProfessor.isBlank()) "Identifique seu perfil" else "Nenhuma atividade ainda", if (nomeProfessor.isBlank()) "Informe seu nome em Ajustes para localizar seus pedidos." else "Seus pedidos e devoluções aparecerão aqui.") }
+        if (lista.isEmpty()) item { EmptyActivityCard("Nenhuma atividade ainda", "Seus pedidos e devoluções aparecerão aqui.") }
         items(lista, key = { it.id }) { em ->
             var codigoParaConfirmar by remember(em.id) { mutableStateOf<String?>(null) }
             Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(16.dp)) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text("Pedido para ${em.sala}", fontWeight = FontWeight.Bold); Text("${em.inicio}  •  ${em.codigos.size} item(ns)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; StatusPill(if (em.devolucao == null) "Em aberto" else "Concluído") }
+                Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text("Empréstimo #${em.id}", fontWeight = FontWeight.Bold); Text("${em.inicio}  •  ${em.codigos.size} item(ns)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; StatusPill(if (em.devolucao == null) "Em aberto" else "Concluído") }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 em.codigos.forEach { codigo ->
                     val item = banco.equipamentos.firstOrNull { it.codigo == codigo }
@@ -579,25 +542,17 @@ private fun Historico(banco: BancoLocal, pesquisa: String, onPesquisa: (String) 
 private fun Mais(
     banco: BancoLocal,
     nomeProfessor: String,
-    onNomeProfessor: (String) -> Unit,
     modoVisual: String,
     onModoVisual: (String) -> Unit,
     onProblema: () -> Unit,
-    onExportar: () -> Unit,
-    onImportar: () -> Unit,
     onSair: () -> Unit
 ) {
-    var nomeEditado by remember(nomeProfessor) { mutableStateOf(nomeProfessor) }
-    var perfilSalvo by remember(nomeProfessor) { mutableStateOf(false) }
-    var confirmarRestauracao by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { TituloSecao("Ajustes", "Personalize o aplicativo para o seu uso.") }
         item { Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Seu perfil", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Seu nome identifica seus pedidos e atividades.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(nomeEditado, { nomeEditado = it; perfilSalvo = false }, Modifier.fillMaxWidth(), label = { Text("Nome do professor") }, placeholder = { Text("Ex.: Maria Silva") }, singleLine = true)
-            Button(onClick = { onNomeProfessor(nomeEditado.trim()); perfilSalvo = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = nomeEditado.isNotBlank()) { Text("Salvar meu nome") }
-            if (perfilSalvo) Text("Nome salvo neste aparelho.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            Text(if (nomeProfessor.isBlank()) "Professor" else nomeProfessor, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text("Nome vindo do cadastro da escola. Para alterar, procure a gestão.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } } }
         item { Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Aparência", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -612,16 +567,12 @@ private fun Mais(
         } } }
         item { Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Ajuda e dados", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Relate um defeito ou proteja seus registros.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Relate um defeito em algum equipamento.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = onProblema, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Default.ReportProblem, null); Spacer(Modifier.width(8.dp)); Text("Informar problema") }
-            FilledTonalButton(onClick = onExportar, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Salvar cópia dos dados") }
-            OutlinedButton(onClick = { confirmarRestauracao = true }, Modifier.fillMaxWidth()) { Text("Restaurar cópia de segurança") }
         } } }
-        item { Text("Os dados ficam salvos neste aparelho. Empréstimos e atividades são vinculados ao seu nome.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { OutlinedButton(onClick = onSair, Modifier.fillMaxWidth()) { Text("Voltar à tela de acesso") } }
+        item { OutlinedButton(onClick = onSair, Modifier.fillMaxWidth()) { Text("Sair da conta") } }
         item { Text("${banco.equipamentos.size} equipamentos disponíveis no catálogo", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
-    if (confirmarRestauracao) AlertDialog(onDismissRequest = { confirmarRestauracao = false }, title = { Text("Restaurar cópia de segurança?") }, text = { Text("A restauração substituirá os dados salvos neste celular. Você poderá escolher o arquivo na próxima etapa.") }, confirmButton = { TextButton(onClick = { confirmarRestauracao = false; onImportar() }) { Text("Continuar") } }, dismissButton = { TextButton(onClick = { confirmarRestauracao = false }) { Text("Cancelar") } })
 }
 
 @Composable
@@ -629,7 +580,7 @@ private fun EmprestimoCard(em: Emprestimo, equipamentos: List<Equipamento>, onAb
     Card(Modifier.fillMaxWidth(), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text("Sala ${em.sala}", fontWeight = FontWeight.SemiBold); Text("Solicitado em ${em.inicio}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { Text("Empréstimo", fontWeight = FontWeight.SemiBold); Text("Solicitado em ${em.inicio}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 StatusPill("Em uso")
             }
             em.codigos.forEach { codigo ->

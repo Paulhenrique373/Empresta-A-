@@ -22,6 +22,10 @@ class AuthViewModel(private val repository: AuthRepository = AuthRepository()) :
             .onSuccess { _state.value = AuthState.SignedIn(it) }
             .onFailure { _state.value = AuthState.Error(it.message ?: "Falha ao entrar.") }
     }
+    fun logout() = viewModelScope.launch {
+        runCatching { repository.sair() } // sem internet, o app ainda sai
+        _state.value = AuthState.SignedOut
+    }
     fun reset(email: String) = viewModelScope.launch {
         _state.value = AuthState.Loading
         runCatching { repository.recuperar(email.trim()) }

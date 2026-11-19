@@ -34,13 +34,16 @@ object SupabaseProvider {
 @Serializable data class UsuarioAdminRow(@SerialName("id_usuario") val id: String, @SerialName("nome_completo") val nome: String, val ativo: Boolean, @SerialName("usuario_perfil") val perfis: List<UsuarioPerfilAdmin> = emptyList())
 @Serializable data class UsuarioPerfilAdmin(@SerialName("perfis") val perfil: PerfilRow)
 
-enum class PerfilAcesso(val label: String) { PROFESSOR_FGB("Professor FGB"), PROFESSOR_TECNICO("Professor Técnico"), PAEET("PAEET"), GESTAO("Gestão") }
+enum class PerfilAcesso(val label: String) { PROFESSOR_FGB("Professor FGB"), PROFESSOR_TECNICO("Professor Técnico"), PAEET("PAEET"), GESTAO("Gestão"), OUTRO("Outro") }
 data class SessaoUsuario(val id: String, val nome: String, val perfis: Set<PerfilAcesso>)
 
 class AuthRepository {
     suspend fun entrar(email: String, senha: String): SessaoUsuario {
         val client = SupabaseProvider.client
         client.auth.signInWith(Email) { this.email = email; password = senha }
+        return try { carregarSessao(client) } catch (e: Throwable) { runCatching { client.auth.signOut() }; throw e }
+    }
+    private suspend fun carregarSessao(client: io.github.jan.supabase.SupabaseClient): SessaoUsuario {
         val id = client.auth.currentUserOrNull()?.id ?: error("A sessão não foi criada.")
         val usuario = client.from("usuarios").select { filter { eq("id_usuario", id) } }.decodeList<UsuarioRow>().firstOrNull() ?: error("Usuário sem cadastro escolar.")
         check(usuario.ativo) { "Conta desativada. Procure a gestão escolar." }
@@ -49,8 +52,9 @@ class AuthRepository {
             client.from("perfis").select { filter { eq("id_perfil", relacao.perfilId) } }
                 .decodeList<PerfilRow>().firstOrNull()?.nome
         }
-        val perfis = perfisEncontrados.mapNotNull { nome -> PerfilAcesso.entries.firstOrNull { it.label.equals(nome, true) } }.toSet()
-        check(perfis.isNotEmpty()) { "Nenhum perfil válido foi atribuído à conta." }
+        // Qualquer perfil cadastrado em "perfis" é aceito (ex.: Suporte). Nomes fora da lista viram OUTRO.
+        val perfis = perfisEncontrados.map { nome -> PerfilAcesso.entries.firstOrNull { it.label.equals(nome.trim(), true) } ?: PerfilAcesso.OUTRO }.toSet()
+        check(perfis.isNotEmpty()) { "Nenhum perfil foi atribuído à conta. Procure a gestão escolar." }
         return SessaoUsuario(id, usuario.nome, perfis)
     }
     suspend fun sair() = SupabaseProvider.client.auth.signOut()
@@ -73,7 +77,7 @@ class DefeitoRepository {
     suspend fun registrar(item: DefeitoInsert) { SupabaseProvider.client.from("defeitos").insert(item) }
     suspend fun listar() = SupabaseProvider.client.from("defeitos").select().decodeList<DefeitoRow>()
     suspend fun atualizarStatus(id: Long, status: String) { SupabaseProvider.client.from("defeitos").update(kotlinx.serialization.json.buildJsonObject { put("status", kotlinx.serialization.json.JsonPrimitive(status)) }) { filter { eq("id_defeito", id) } }
-}
+    }
 }
 class UsuarioRepository { suspend fun listar() = SupabaseProvider.client.from("usuarios").select(Columns.raw("*,usuario_perfil(perfis(nome_perfil))")).decodeList<UsuarioAdminRow>() }
 class AuditoriaRepository { suspend fun listar() = SupabaseProvider.client.from("auditoria").select().decodeList<kotlinx.serialization.json.JsonObject>() }
